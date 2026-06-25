@@ -321,6 +321,24 @@ data/example/dataset-b
 
 ## 结果输出
 
+`cvd-cli create` 默认会在提交成功后进入 watch 模式；也可以对已有 job 单独执行 `cvd-cli watch <JOB_ID>`。终端模式下，CLI 会每 2 秒追加一段实时 sample，保留历史采样，便于观察吞吐、IOPS 和延迟趋势；非 TTY 环境会退化为逐行日志输出。
+
+实时 sample 输出示例：
+
+```text
+Job ID: 018f6b2d-7b8a-7c00-8f4d-4c7f5a1c0001 | Elapsed: 00:00:08 / 00:01:00 | Status: RUNNING
+Tip: Press Ctrl+C to detach or cancel job
+
+   Worker    │      Op       │  Elapsed  │ Throughput │  Ops/s  │   Ops    │ Errors │  p50   │  p95   │  p99   │  p999  │  max   │  avg
+─────────────┼───────────────┼───────────┼────────────┼─────────┼──────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────
+ worker-a... │     read      │ 00:00:08  │  512MiB/s  │  8.0k   │  64.0k   │   0    │ 1.2ms  │ 3.8ms  │ 6.4ms  │ 9.1ms  │ 12ms   │ 1.8ms
+ worker-b... │     read      │ 00:00:08  │  498MiB/s  │  7.8k   │  62.4k   │   0    │ 1.3ms  │ 4.1ms  │ 6.9ms  │ 10ms   │ 14ms   │ 1.9ms
+─────────────┼───────────────┼───────────┼────────────┼─────────┼──────────┼────────┼────────┼────────┼────────┼────────┼────────┼────────
+ Aggregate   │     read      │ 00:00:08  │  1010MiB/s │  15.8k  │  126.4k  │   0    │ 1.2ms  │ 3.9ms  │ 6.6ms  │ 9.6ms  │ 14ms   │ 1.8ms
+```
+
+job 到达终态后，CLI 会继续打印终态摘要，包括 `Job Summary`、`Performance`、`Latency`，以及必要时的 manifest scan 和 warning 信息。
+
 `cvd-cli create / query --output` 支持 JSON 和 CSV：
 
 ```bash
