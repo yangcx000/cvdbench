@@ -1,16 +1,24 @@
 # cvdbench
 
-针对 **FUSE + 云对象存储用户态文件系统**（ExampleFS、S3FS 等）的分布式压测服务。
-补充 vdbench / fio 在此类场景下的不足，重点在「大规模数据量、长时间稳定性、
-客户端资源占用」而不仅是峰值吞吐。
+cvdbench 是一个面向 **FUSE + 云对象存储用户态文件系统**（例如 ExampleFS、S3FS）的分布式压测工具。它关注的不只是峰值吞吐，还包括大规模数据集、长时间运行、客户端资源占用和稳定性。
 
-设计文档与全部约束在 [`spec.md`](spec.md)；部署细节见 [`DEPLOY.md`](DEPLOY.md)。
+相比通用 I/O 压测工具，cvdbench 更适合验证这类文件系统在真实挂载路径上的表现：多机 worker 同时访问同一个 FUSE mount，master 负责调度、分发文件清单并聚合结果，CLI 负责提交任务和查看进度。
+
+- 设计细节与约束：[`spec.md`](spec.md)
+- 部署、systemd、监控：[`DEPLOY.md`](DEPLOY.md)
+- 示例 job：[`examples/`](examples/)
 
 ---
 
-## 架构（高层）
+## 系统架构
 
-Master-Worker 纯拉取模型：
+cvdbench 由三个进程组成：
+
+- `cvd-master`：中心调度服务，保存 job 状态、分配 worker slot、扫描 manifest、聚合结果。
+- `cvd-worker`：长驻压测进程，主动从 master 拉取任务，在本机挂载点执行读写或 metadata 操作。
+- `cvd-cli`：命令行客户端，用于创建、观察、查询、取消和列出 job。
+
+所有 worker 到 master 的通信都是 **worker 主动发起的 gRPC 请求**。master 不需要知道 worker 的监听地址，也不会回调 worker，因此 worker 可以运行在没有入站端口的机器上。
 
 ```mermaid
 flowchart TB
@@ -38,22 +46,22 @@ flowchart TB
     wN  -.->|"S3 SDK 旁路<br/>仅一致性测试"| s3
 ```
 
-不变量：
+核心设计约束：
 
-- **Master 不回调 Worker**。所有 worker→master 的 RPC 都由 worker 主动发起；
-  取消 / unknown_job / 起跑时间等控制信号搭车在响应字段里。
-- **Master 状态全内存**。重启即丢失。
-- **Worker_id 自生成**：`<hostname>-<pid>-<startup-uuid8>`，进程生命周期内不变。
+- **Master 不回调 worker**：取消、unknown job、起跑时间等控制信号都通过 worker 请求的响应返回。
+- **Master 状态保存在内存中**：master 重启后，已提交 job 的状态会丢失。
+- **Worker ID 由 worker 自生成**：格式为 `<hostname>-<pid>-<startup-uuid8>`，在进程生命周期内保持不变。
+- **读任务通过共享队列分发文件**：master 维护有界 file queue，worker 竞争拉取文件批次，不做静态文件分片。
 
-更详细的：见 [`spec.md`](spec.md) §2 / §5 / §6。
+更完整的调度状态机和 RPC 语义见 [`spec.md`](spec.md) §2 / §5 / §6。
 
 ---
 
-## 集群部署快速开始
+## 快速开始
 
-需要 Linux x86_64、Rust stable（由 `rust-toolchain.toml` 锁定）和
-protoc 3.12+（spec §8）。生产部署细节、systemd unit、监控和升级注意事项
-见 [`DEPLOY.md`](DEPLOY.md)。
+以下步骤展示如何在多机环境中启动一次压测。生产环境的 systemd unit、监控接入和升级注意事项见 [`DEPLOY.md`](DEPLOY.md)。
+
+环境要求：Linux x86_64、Rust stable（由 `rust-toolchain.toml` 锁定）以及 protoc 3.12+。
 
 ### 1. 编译并分发二进制
 
@@ -243,7 +251,7 @@ Workers : 4 reported, 4 success, 0 failed
 
 ---
 
-## 测试 Cases 汇总
+## 测试场景概览
 
 先选一个最接近目标的 case，复制对应 `examples/job_*.json`，再按环境修改
 `fs_name`、`target_workers`、`duration`、`concurrency`、manifest 路径和目录路径。
@@ -277,7 +285,7 @@ cvd-cli --master <MASTER_IP>:9090 create \
 并把 `duration`、`target_workers` 和 `metadata.concurrency` 调小；如果要验证读路径，
 先准备一个很小的 `read.file_manifest`，确认路径规则正确后再扩大规模。
 
-### Case 例子
+### 场景示例
 
 **1）最小连通性验证：metadata 写入型**
 
@@ -331,7 +339,7 @@ cvd-cli --master <MASTER_IP>:9090 create \
 
 ---
 
-## Job 场景速查
+## Job 配置速查
 
 详细字段在 spec §3 / §4.1 / §9.4。压测类型由 `cvdbench` 下的
 `read` / `write` / `metadata` 子对象决定；可以只配置其中一个，也可以组合成
@@ -477,6 +485,6 @@ cargo clippy --workspace
 
 ---
 
-## License
+## 许可证
 
 Apache-2.0。
