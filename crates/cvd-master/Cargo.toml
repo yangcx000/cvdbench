@@ -1,0 +1,44 @@
+[package]
+name         = "cvd-master"
+version      = "0.1.0"
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+publish      = { workspace = true }
+description  = "cvdbench master daemon: gRPC server, in-memory scheduler, manifest producer"
+
+[[bin]]
+name = "cvd-master"
+path = "src/main.rs"
+
+[lib]
+name = "cvd_master"
+path = "src/lib.rs"
+
+[dependencies]
+cvd-proto  = { path = "../cvd-proto" }
+cvd-common = { path = "../cvd-common" }
+
+tonic              = { workspace = true }
+prost              = { workspace = true }
+tokio              = { workspace = true }
+tokio-util         = { workspace = true }
+tokio-stream       = { workspace = true }
+futures            = { workspace = true }
+async-trait        = { workspace = true }
+thiserror          = { workspace = true }
+anyhow             = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde              = { workspace = true }
+toml               = { workspace = true }
+csv                = { workspace = true }
+clap               = { workspace = true }
+uuid               = { workspace = true }
+hdrhistogram       = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

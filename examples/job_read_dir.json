@@ -1,0 +1,18 @@
+{
+  "cvdbench": {
+    "fs_name": "examplefs",
+    "target_workers": 4,
+    "io_mode": "seq",
+    "io_aligned": true,
+    "direct_io": false,
+    "block_size": "1Mi",
+    "duration": "10m",
+    "warmup": "1m",
+    "read": {
+      "concurrency": 16,
+      "dir_manifest": "/mnt/fuse_filesystem/data/example/cvdbench/dir_manifest/cvd-dir-manifest.txt",
+      "loop_files": true,
+      "rate_limit": "2GB/s"
+    }
+  }
+}

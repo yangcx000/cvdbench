@@ -1,0 +1,22 @@
+{
+  "cvdbench": {
+    "fs_name": "examplefs",
+    "target_workers": 4,
+    "io_mode": "seq",
+    "io_aligned": true,
+    "direct_io": false,
+    "block_size": "1Mi",
+    "duration": "5m",
+    "warmup": "30s",
+    "write": {
+      "concurrency": 8,
+      "dir": "bench/write",
+      "file_size": "1G",
+      "fsync": false,
+      "verify_after_write": false,
+      "cleanup": true,
+      "think_time": "10ms",
+      "rate_limit": "500MB/s"
+    }
+  }
+}

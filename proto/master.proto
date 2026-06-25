@@ -1,0 +1,310 @@
+// cvdbench gRPC 协议定义
+// 与 spec.md §4.1 / §4.2 / §4.3 严格对齐
+// 调整原则：CLI RPC 错误走 gRPC status；Worker RPC 在响应中搭车 cancelled / unknown_job
+
+syntax = "proto3";
+package cvdbench;
+
+service MasterService {
+  // CLI 操作
+  rpc CreateJob(CreateJobRequest) returns (CreateJobResponse);
+  rpc WatchJob (WatchJobRequest)  returns (stream JobEvent);
+  rpc QueryJob (QueryJobRequest)  returns (QueryJobResponse);
+  rpc DeleteJob(DeleteJobRequest) returns (DeleteJobResponse);
+  rpc ListJobs (ListJobsRequest)  returns (ListJobsResponse);
+
+  // Worker 拉取（worker 主动调用，无需预注册）
+  rpc FetchJob      (FetchJobRequest)       returns (FetchJobResponse);
+  rpc ReportReady   (ReportReadyRequest)    returns (ReportReadyResponse);
+  rpc FetchFileBatch(FetchFileBatchRequest) returns (FetchFileBatchResponse);
+  rpc ReportProgress(ReportProgressRequest) returns (ReportProgressResponse);
+  rpc ReportResult  (ReportResultRequest)   returns (ReportResultResponse);
+}
+
+// ─── Job 核心类型 ──────────────────────────────────────────────────────────
+
+message Job {
+  string    job_id     = 1;
+  BenchSpec spec       = 2;   // 存储态必须脱敏凭据字段
+  JobStatus status     = 3;
+  int64     created_at = 4;   // unix timestamp ms
+}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_PENDING     = 1;
+  JOB_STATUS_PREPARING   = 2;
+  JOB_STATUS_RUNNING     = 3;
+  JOB_STATUS_COMPLETED   = 4;
+  JOB_STATUS_FAILED      = 5;
+  JOB_STATUS_CANCELLED   = 6;
+}
+
+// ─── BenchSpec ─────────────────────────────────────────────────────────────
+
+message BenchSpec {
+  string fs_name        = 1;
+  string io_mode        = 2;   // seq | rand
+  bool   io_aligned     = 3;
+  bool   direct_io      = 4;   // O_DIRECT；与 io_aligned=false 互斥
+  string block_size     = 5;
+  string duration       = 6;
+  string warmup         = 7;
+
+  optional ReadConfig     read     = 8;
+  optional WriteConfig    write    = 9;
+  optional MetadataConfig metadata = 10;
+  int32  target_workers = 11;  // 期望参与 worker 数；0/省略归一化为 1
+}
+
+message ReadConfig {
+  int32                       concurrency           = 1;
+  string                      file_manifest         = 2;   // 与 dir_manifest 互斥
+  string                      dir_manifest          = 3;   // 与 file_manifest 互斥
+  string                      think_time            = 4;
+  string                      rate_limit            = 5;   // per-worker
+  optional ConsistencyConfig  s3_consistency_check  = 6;
+  bool                        loop_files            = 7;
+}
+
+message ConsistencyConfig {
+  string bucket_name   = 1;
+  string bucket_url    = 2;
+  string access_key    = 3;   // 明文；存储/展示时必须脱敏
+  string secret_key    = 4;   // 明文；存储/展示时必须脱敏
+  string region        = 5;
+  string prefix        = 6;
+  string session_token = 7;   // 可选明文；STS 临时凭据使用
+}
+
+message S3CredentialMaterial {
+  string access_key    = 1;
+  string secret_key    = 2;
+  string session_token = 3;
+}
+
+message WriteConfig {
+  int32                  concurrency        = 1;
+  string                 dir                = 2;
+  string                 file_size          = 3;   // 与 file_size_range 二选一
+  optional FileSizeRange file_size_range    = 4;
+  bool                   fsync              = 5;
+  bool                   cleanup            = 6;
+  string                 think_time         = 7;
+  string                 rate_limit         = 8;   // per-worker
+  bool                   verify_after_write = 9;
+}
+
+message MetadataConfig {
+  int32           concurrency        = 1;
+  string          dir                = 2;
+  repeated string ops                = 3;   // create | mkdir | stat | open | readdir
+  int32           depth              = 4;
+  int32           width              = 5;
+  int32           files_per_dir      = 6;
+  string          think_time         = 7;
+  string          rate_limit         = 8;   // per-worker，如 "5000iops"
+  int32           layout_concurrency = 9;
+  bool            read_only          = 10;  // true = 基于已有目录树，只允许 stat/open/readdir，跳过预建/清理
+  int32           read_only_scan_limit = 11; // read_only 扫描的最大目录项数；0/省略 = 不限制
+  string          dir_manifest      = 12;  // master 扫描目录清单并分发文件；worker 对文件执行 stat
+}
+
+message FileSizeRange {
+  string min          = 1;
+  string max          = 2;
+  string distribution = 3;   // uniform | log_uniform；空表示 log_uniform
+}
+
+// ─── CLI 操作 ──────────────────────────────────────────────────────────────
+
+message CreateJobRequest  { BenchSpec spec   = 1; }
+message CreateJobResponse { string    job_id = 1; }
+
+message JobEvent {
+  string                     job_id          = 1;
+  JobStatus                  status          = 2;
+  repeated WorkerProgress    worker_progress = 3;
+  optional AggregatedMetrics aggregated      = 4;
+  optional string            error           = 5;
+  int64                      timestamp       = 6;
+  int64                      seq             = 7;   // 单调递增；仅用于单条 stream 内排序
+  EventKind                  kind            = 8;
+  int64                      dirs_scanned    = 9;   // dir_manifest 扫描完成的目录数
+  int64                      files_scanned   = 10;  // dir_manifest 扫描发现并入队的文件数
+  int64                      scan_duration_ms = 11; // dir_manifest 扫描累计耗时
+}
+
+enum EventKind {
+  EVENT_KIND_UNSPECIFIED   = 0;
+  EVENT_KIND_STATUS_CHANGE = 1;
+  EVENT_KIND_PROGRESS      = 2;
+  EVENT_KIND_RESULT        = 3;
+  EVENT_KIND_ERROR         = 4;
+}
+
+message WorkerProgress {
+  string                          worker_id  = 1;
+  int64                           elapsed_ms = 2;
+  map<string, PerformanceMetrics> per_op     = 3;   // key: read | write | metadata.* | consistency
+  WorkerPhase                     phase      = 4;
+}
+
+enum WorkerPhase {
+  WORKER_PHASE_UNSPECIFIED   = 0;
+  WORKER_PHASE_PREPARING     = 1;
+  WORKER_PHASE_WAITING_START = 2;
+  WORKER_PHASE_WARMUP        = 3;
+  WORKER_PHASE_MEASURING     = 4;
+  WORKER_PHASE_CLEANUP       = 5;
+  WORKER_PHASE_FINISHED      = 6;
+}
+
+message WatchJobRequest  { string job_id = 1; }
+
+message QueryJobRequest  { string job_id = 1; }
+message QueryJobResponse {
+  Job                        job            = 1;
+  repeated WorkerResult      worker_results = 2;
+  optional AggregatedMetrics aggregated     = 3;
+  optional string            error          = 4;   // job 级错误摘要（manifest/staleness/prepare timeout 等）
+  int32                      run_workers    = 5;   // master 固化的 run_workers 数；PENDING 时为已占 slot 数
+  int64                      dirs_scanned   = 6;   // dir_manifest 扫描完成的目录数
+  int64                      files_scanned  = 7;   // dir_manifest 扫描发现并入队的文件数
+  int64                      scan_duration_ms = 8; // dir_manifest 扫描累计耗时
+}
+
+message DeleteJobRequest  { string job_id = 1; }
+message DeleteJobResponse {}
+
+message ListJobsRequest {
+  optional JobStatus status_filter = 1;
+  int32              limit         = 2;   // 0 = server 默认 100；上限 1000
+}
+message ListJobsResponse { repeated Job jobs = 1; }
+
+// ─── Worker 拉取 ───────────────────────────────────────────────────────────
+
+message FetchJobRequest { string worker_id = 1; }
+message FetchJobResponse {
+  optional string               job_id          = 1;   // 无可用 job 时为空
+  optional BenchSpec            spec            = 2;   // 凭据字段脱敏后的 spec
+  optional string               mount_point     = 3;
+  optional int32                worker_index    = 4;   // 0..target_workers-1
+  optional S3CredentialMaterial s3_credentials  = 5;   // 仅一致性测试需要；不得进入 Job.spec / JobEvent / QueryJob / 结果文件
+  int64                         master_now_ms   = 6;   // worker 用于估算 clock offset
+}
+
+// ─── Worker 准备完成 / 起跑屏障 ────────────────────────────────────────────
+
+message ReportReadyRequest {
+  string          job_id    = 1;
+  string          worker_id = 2;
+  optional string error     = 3;   // 本地准备失败则填写；master 将 job 置 FAILED
+}
+
+message ReportReadyResponse {
+  bool  cancelled     = 1;
+  bool  unknown_job   = 2;
+  int64 start_at_ms   = 3;   // 0 表示屏障尚未打开；worker sleep 500ms 后重试
+  int64 master_now_ms = 4;
+}
+
+// ─── 文件批次拉取（读场景专用） ────────────────────────────────────────────
+
+message FetchFileBatchRequest {
+  string job_id     = 1;
+  string worker_id  = 2;
+  int32  batch_size = 3;   // 每次拉取的文件数，默认 1000
+}
+
+message FetchFileBatchResponse {
+  repeated FileEntry files       = 1;
+  bool               has_more    = 2;   // false = manifest 已结束且队列已空（且 loop_files=false）
+  bool               cancelled   = 3;
+  bool               unknown_job = 4;
+}
+
+message FileEntry {
+  string fs_path = 1;   // 文件系统路径（相对 mount_point）
+  string s3_key  = 2;   // S3 对象 key，一致性测试时使用，否则为空
+}
+
+// ─── Worker 上报 ───────────────────────────────────────────────────────────
+
+message ReportProgressRequest {
+  string         job_id   = 1;
+  WorkerProgress progress = 2;
+}
+message ReportProgressResponse {
+  bool cancelled   = 1;
+  bool unknown_job = 2;
+}
+
+message ReportResultRequest {
+  string       job_id = 1;
+  WorkerResult result = 2;
+}
+message ReportResultResponse {
+  bool unknown_job = 1;
+}
+
+// ─── 共享 Metrics ──────────────────────────────────────────────────────────
+
+message PerformanceMetrics {
+  double       throughput_mbps        = 1;
+  double       iops                   = 2;
+  LatencyStats latency_us             = 3;   // 单位：微秒
+  int64        error_count            = 4;   // 任一非零都已使 worker 终止
+  double       error_rate             = 5;   // = error_count / total_ops
+  int64        total_ops              = 6;
+  int64        total_bytes            = 7;
+  bytes        latency_histogram_hdr  = 8;   // HDR histogram V2 compressed bytes；CLI/JSON 默认不展示
+}
+
+message LatencyStats {
+  double p50  = 1;
+  double p95  = 2;
+  double p99  = 3;
+  double p999 = 4;
+  double max  = 5;
+  double avg  = 6;
+}
+
+message AggregatedMetrics {
+  PerformanceMetrics              total        = 1;   // 多 worker 汇总（所有 op 合并）
+  map<string, PerformanceMetrics> total_per_op = 2;   // 多 worker 按 op 类型汇总
+  repeated WorkerResult           per_worker   = 3;
+}
+
+message WorkerResult {
+  string                          worker_id             = 1;
+  map<string, PerformanceMetrics> per_op                = 2;   // key: read | write | metadata.* | consistency
+  repeated ConsistencyError       consistency_errors    = 3;
+  bool                            success               = 4;
+  optional string                 error                 = 5;
+  int64                           effective_duration_ms = 6;
+  int64                           measure_start_ms      = 7;
+  int64                           measure_end_ms        = 8;
+}
+
+// ─── 一致性错误 ────────────────────────────────────────────────────────────
+
+message ConsistencyError {
+  string               worker_id = 1;
+  string               fs_path   = 2;
+  string               s3_key    = 3;
+  ConsistencyErrorType type      = 4;
+  string               message   = 5;
+}
+
+enum ConsistencyErrorType {
+  CONSISTENCY_ERROR_UNSPECIFIED = 0;
+  CET_HASH_MISMATCH             = 1;
+  CET_SIZE_MISMATCH             = 2;
+  CET_FS_READ_ERROR             = 3;
+  CET_S3_READ_ERROR             = 4;
+  CET_S3_NOT_FOUND              = 5;
+  CET_S3_THROTTLE               = 6;
+  CET_PERMISSION_DENIED         = 7;
+}

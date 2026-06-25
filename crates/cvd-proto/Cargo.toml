@@ -1,0 +1,20 @@
+[package]
+name         = "cvd-proto"
+version      = "0.1.0"
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+publish      = { workspace = true }
+description  = "Generated tonic/prost stubs for the cvdbench MasterService"
+
+[dependencies]
+tonic       = { workspace = true }
+prost       = { workspace = true }
+prost-types = { workspace = true }
+serde       = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
+
+[lints]
+workspace = true

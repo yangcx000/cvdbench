@@ -1,0 +1,25 @@
+{
+  "cvdbench": {
+    "fs_name": "examplefs",
+    "target_workers": 1,
+    "io_mode": "seq",
+    "io_aligned": true,
+    "direct_io": false,
+    "block_size": "4Ki",
+    "duration": "30s",
+    "warmup": "5s",
+    "metadata": {
+      "concurrency": 16,
+      "dir": "data/example",
+      "ops": ["stat", "open", "readdir"],
+      "read_only": true,
+      "read_only_scan_limit": 5000,
+      "depth": 0,
+      "width": 0,
+      "files_per_dir": 0,
+      "layout_concurrency": 1,
+      "think_time": "0ms",
+      "rate_limit": "5000iops"
+    }
+  }
+}

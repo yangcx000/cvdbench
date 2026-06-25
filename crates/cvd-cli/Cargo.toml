@@ -1,0 +1,40 @@
+[package]
+name         = "cvd-cli"
+version      = "0.1.0"
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+publish      = { workspace = true }
+description  = "cvdbench CLI: gRPC client for create/watch/query/delete/list jobs"
+
+[[bin]]
+name = "cvd-cli"
+path = "src/main.rs"
+
+[lib]
+name = "cvd_cli"
+path = "src/lib.rs"
+
+[dependencies]
+cvd-proto  = { path = "../cvd-proto" }
+cvd-common = { path = "../cvd-common" }
+
+tonic              = { workspace = true }
+prost              = { workspace = true }
+tokio              = { workspace = true }
+tokio-stream       = { workspace = true }
+futures            = { workspace = true }
+async-trait        = { workspace = true }
+thiserror          = { workspace = true }
+anyhow             = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+csv                = { workspace = true }
+clap               = { workspace = true }
+crossterm          = { workspace = true }
+indicatif          = { workspace = true }
+
+[lints]
+workspace = true

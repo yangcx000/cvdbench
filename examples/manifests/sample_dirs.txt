@@ -1,0 +1,10 @@
+# dir_manifest 示例（spec §9.1）。
+# 每行一个目录路径，相对 mount_point：
+#   - 不得以 `/` 开头、不得含 `..` / NUL
+#   - 空行 / `#` 开头注释行被忽略
+#   - master 启动 dir_scan_concurrency 个 scanner 并发递归扫描这些目录
+#   - 不跟随 symlink（spec §9.1）；scanner 把扫描出来的普通文件 push 进 file_queue
+
+data/2024
+data/2025
+archive/logs

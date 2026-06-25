@@ -1,0 +1,18 @@
+# file_manifest 示例（spec §9.1）。
+# 每行 `fs_path,s3_key`：
+#   - fs_path  ：文件系统路径，相对 master 配置的 mount_point
+#   - s3_key   ：S3 对象 key（一致性测试用；纯数据压测可省略，留空）
+#
+# 规则：
+#   - 路径不得以 `/` 开头、不得包含 `..` 或 NUL 字节
+#   - 空行 / `#` 开头注释行被忽略
+#   - 支持 RFC 4180 CSV quoting
+
+# 纯数据压测（s3_key 为空也可以省略第二列）
+data/2024/file_001.dat
+data/2024/file_002.dat
+data/2025/file_001.dat
+
+# 一致性测试（两列：fs_path,s3_key 都给出）
+archive/legacy/a.dat,archive/legacy/a.dat
+archive/legacy/b.dat,archive/legacy/b.dat

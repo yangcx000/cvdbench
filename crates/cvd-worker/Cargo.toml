@@ -1,0 +1,52 @@
+[package]
+name         = "cvd-worker"
+version      = "0.1.0"
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+publish      = { workspace = true }
+description  = "cvdbench worker daemon: pure gRPC client benchmark runner"
+
+[[bin]]
+name = "cvd-worker"
+path = "src/main.rs"
+
+[lib]
+name = "cvd_worker"
+path = "src/lib.rs"
+
+[dependencies]
+cvd-proto  = { path = "../cvd-proto" }
+cvd-common = { path = "../cvd-common" }
+
+tonic              = { workspace = true }
+prost              = { workspace = true }
+tokio              = { workspace = true }
+tokio-util         = { workspace = true }
+tokio-stream       = { workspace = true }
+futures            = { workspace = true }
+async-trait        = { workspace = true }
+thiserror          = { workspace = true }
+anyhow             = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde              = { workspace = true }
+hdrhistogram       = { workspace = true }
+sha2               = { workspace = true }
+uuid               = { workspace = true }
+clap               = { workspace = true }
+
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+rand       = { workspace = true }
+libc       = "0.2"
+async-channel = "2.3"
+
+[dev-dependencies]
+# 集成测试需要起 in-process master
+cvd-master = { path = "../cvd-master" }
+tempfile   = "3"
+wiremock   = "0.6"
+
+[lints]
+workspace = true

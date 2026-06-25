@@ -1,0 +1,45 @@
+# cvd-master 配置示例（spec §5.1）。
+# 配置文件不支持热重载（spec §9.9）；任何变更需要重启 master，重启即丢失全部
+# 内存中的 job 记录。运行中的 job 持有的 mount_point / scheduler 参数为
+# CreateJob 时刻的快照，运行期间 master 配置即便修改也不影响这些快照。
+
+[server]
+# master 监听地址；worker / CLI 通过它连入。
+listen = "0.0.0.0:9090"
+
+[metrics]
+# Prometheus text endpoint；暴露 master 已收到的每个 worker per-op 指标。
+listen = "0.0.0.0:9100"
+
+[scheduler]
+# PREPARING/RUNNING 中任一 run_worker 超过此时长未上报任何 RPC 即 job FAILED。
+# 建议 ≥ 3 × progress_report_interval（spec §5.5）。
+worker_staleness_secs = 60
+
+# 终态 job（COMPLETED/FAILED/CANCELLED）保留时长；超过即从内存 GC（spec §2 / §5.1）。
+job_retention_secs = 259200          # 3 天
+
+# PREPARING 阶段等待全部 ReportReady 的最长时间，超时即 FAILED（spec §5.3）。
+prepare_timeout_secs = 600
+
+# 起跑屏障开放后，距 hot loop 起跑的统一延迟（spec §5.1）。
+start_delay_ms = 5000
+
+# 每个读 job 的 file_queue 上限；per-job 内存上界 ≈ capacity × sizeof(FileEntry)。
+file_queue_capacity = 100000
+
+# dir_manifest 模式下待扫描目录队列上限；per-job。
+dir_queue_capacity = 50000
+
+# dir_manifest 模式下并行目录扫描 task 数。
+dir_scan_concurrency = 8
+
+# fs_name → mount_point 映射，供 master 解析路径并下发给 worker；
+# 客户端 BenchSpec 里通过 fs_name 引用其中之一。
+[[filesystems]]
+name        = "examplefs"
+mount_point = "/mnt/examplefs"
+
+[[filesystems]]
+name        = "s3fs"
+mount_point = "/mnt/s3fs"

@@ -1,0 +1,26 @@
+{
+  "_comment": "FS vs S3 一致性测试。注意 access_key/secret_key/session_token 一旦提交到 master 即从存储态脱敏；明文凭据通过 FetchJobResponse.s3_credentials 单独下发。生产环境请用 mTLS 或受控网络保护这条链路（cvdbench 自身不内建 mTLS，见 spec §9.8）。",
+  "cvdbench": {
+    "fs_name": "examplefs",
+    "target_workers": 2,
+    "io_mode": "seq",
+    "io_aligned": true,
+    "direct_io": false,
+    "block_size": "1Mi",
+    "duration": "30s",
+    "read": {
+      "concurrency": 4,
+      "file_manifest": "/mnt/fuse_filesystem/data/example/cvdbench/file_manifest/cvd-file-manifest.csv",
+      "loop_files": false,
+      "s3_consistency_check": {
+        "bucket_name": "example-bucket",
+        "bucket_url": "https://s3.example.com",
+        "access_key": "EXAMPLE_ACCESS_KEY",
+        "secret_key": "EXAMPLE_SECRET_KEY",
+        "session_token": "",
+        "region": "us-east-1",
+        "prefix": "data/"
+      }
+    }
+  }
+}
