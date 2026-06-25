@@ -14,7 +14,7 @@
 
 ## 概览
 
-`cvdbench` 用于在真实挂载路径上验证 FUSE、S3FS、OSSFS、BOSFS 等用户态文件系统的吞吐、延迟、稳定性与一致性。它不是单机 I/O 小工具，而是面向多机、长稳、大规模数据集和元数据压力场景的 benchmark 框架。
+`cvdbench` 用于在真实挂载路径上验证用户态文件系统的吞吐、延迟、稳定性与一致性。它不是单机 I/O 小工具，而是面向多机、长稳、大规模数据集和元数据压力场景的 benchmark 框架。
 
 **核心能力**
 
@@ -51,28 +51,33 @@ cvdbench 由三个进程组成：
 
 ```mermaid
 flowchart LR
-    cli["cvd-cli\ncreate / watch / query"]
-    master["cvd-master\nscheduler / queue / aggregate"]
-
-    subgraph workers["cvd-worker daemons"]
-        w1["worker #1"]
-        w2["worker #2"]
-        wn["worker #N"]
+    subgraph client["Client"]
+        cli["cvd-cli<br/>create · watch · query"]
     end
 
-    fuse["FUSE mount point\nPOSIX read/write/stat"]
-    object[("S3 / OSS / BOS\nobject storage")]
+    subgraph control["Control Plane"]
+        master["cvd-master<br/>schedule · queue · aggregate"]
+    end
 
-    cli <--> |gRPC| master
-    w1 --> |pull RPC| master
-    w2 --> |pull RPC| master
-    wn --> |pull RPC| master
-    w1 --> fuse
-    w2 --> fuse
-    wn --> fuse
-    fuse --> object
-    w1 -. consistency check .-> object
-    w2 -. consistency check .-> object
+    subgraph workers["Execution Plane"]
+        worker1["cvd-worker #1"]
+        worker2["cvd-worker #2"]
+        workerN["cvd-worker #N"]
+    end
+
+    subgraph storage["Storage Path"]
+        mount["Mount Point<br/>POSIX read / write / stat"]
+        object[("Object Storage<br/>optional consistency check")]
+    end
+
+    cli <-->|gRPC API| master
+    worker1 -->|pull job / report metrics| master
+    worker2 -->|pull job / report metrics| master
+    workerN -->|pull job / report metrics| master
+    worker1 --> mount
+    worker2 --> mount
+    workerN --> mount
+    mount --> object
 ```
 
 **设计约束**
@@ -256,15 +261,15 @@ cvd-cli --master <MASTER_IP>:9090 create \
   --output result.json
 ```
 
-| 场景 | 目标 | 准备工作 | 示例 |
-|---|---|---|---|
-| 文件清单读 | 按 CSV 文件列表做顺序或随机读，统计吞吐、IOPS 和延迟。 | 配置 `read.file_manifest`，CSV 第一列为相对 `mount_point` 的 `fs_path`。 | [`job_read.json`](examples/job_read.json) |
-| 目录清单读 | master 扫描目录后分发文件给 worker 读取。 | 配置 `read.dir_manifest`，每行是相对 `mount_point` 的目录。 | [`job_read_dir.json`](examples/job_read_dir.json) |
-| 写入压测 | 多 worker 在独立目录下写文件，观察写吞吐、延迟和错误率。 | 配置 `write.dir`，按需启用 `fsync`、`cleanup`、`verify_after_write`。 | [`job_write.json`](examples/job_write.json) |
-| 元数据写入 | 预建目录树后循环执行 create、mkdir、stat、open、readdir。 | 配置 `metadata.read_only=false` 和目录树规模。 | [`job_metadata.json`](examples/job_metadata.json) |
-| 元数据只读 | 扫描已有目录树，循环执行只读元数据操作。 | 配置 `metadata.read_only=true`，建议设置 `read_only_scan_limit`。 | [`job_metadata_readonly_examplefs_fuse.json`](examples/job_metadata_readonly_examplefs_fuse.json) |
-| 一致性校验 | 对比 FUSE 文件和源对象的 size / SHA256。 | 配置 `read.s3_consistency_check` 和对象存储连接信息。 | [`job_consistency.json`](examples/job_consistency.json) |
-| Mixed 组合 | 在同一个 job 中并发执行 read、write、metadata。 | 同时配置多个 workload section。 | 自定义 |
+| 场景 | 目标 | 准备工作与示例 |
+|---|---|---|
+| 文件清单读 | 按 CSV 文件列表做顺序或随机读，统计吞吐、IOPS 和延迟。 | 配置 `read.file_manifest`，CSV 第一列为相对 `mount_point` 的 `fs_path`。示例：[`job_read.json`](examples/job_read.json) |
+| 目录清单读 | master 扫描目录后分发文件给 worker 读取。 | 配置 `read.dir_manifest`，每行是相对 `mount_point` 的目录。示例：[`job_read_dir.json`](examples/job_read_dir.json) |
+| 写入压测 | 多 worker 在独立目录下写文件，观察写吞吐、延迟和错误率。 | 配置 `write.dir`，按需启用 `fsync`、`cleanup`、`verify_after_write`。示例：[`job_write.json`](examples/job_write.json) |
+| 元数据写入 | 预建目录树后循环执行 create、mkdir、stat、open、readdir。 | 配置 `metadata.read_only=false` 和目录树规模。示例：[`job_metadata.json`](examples/job_metadata.json) |
+| 元数据只读 | 扫描已有目录树，循环执行只读元数据操作。 | 配置 `metadata.read_only=true`，建议设置 `read_only_scan_limit`。示例：[`job_metadata_readonly_examplefs_fuse.json`](examples/job_metadata_readonly_examplefs_fuse.json) |
+| 一致性校验 | 对比 FUSE 文件和源对象的 size / SHA256。 | 配置 `read.s3_consistency_check` 和对象存储连接信息。示例：[`job_consistency.json`](examples/job_consistency.json) |
+| Mixed 组合 | 在同一个 job 中并发执行 read、write、metadata。 | 同时配置多个 workload section。示例：自定义 |
 
 ### 常用字段
 
