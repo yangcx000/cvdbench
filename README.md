@@ -1,6 +1,6 @@
 # cvdbench
 
-cvdbench 是一个面向 **FUSE + 云对象存储用户态文件系统**（例如 ExampleFS、S3FS）的分布式压测工具。它关注的不只是峰值吞吐，还包括大规模数据集、长时间运行、客户端资源占用和稳定性。
+cvdbench 是一个面向 **FUSE + 云对象存储用户态文件系统**的分布式压测工具。它关注的不只是峰值吞吐，还包括大规模数据集、长时间运行、客户端资源占用和稳定性。
 
 相比通用 I/O 压测工具，cvdbench 更适合验证这类文件系统在真实挂载路径上的表现：多机 worker 同时访问同一个 FUSE mount，master 负责调度、分发文件清单并聚合结果，CLI 负责提交任务和查看进度。
 
@@ -32,7 +32,7 @@ flowchart TB
         wN["<b>worker #N</b>"]
     end
 
-    fuse["<b>FUSE 用户态文件系统</b><br/>ExampleFS / S3FS / ...<br/>—— 被测对象，挂载在 mount_point"]
+    fuse["<b>FUSE 用户态文件系统</b><br/>被测对象，挂载在 mount_point"]
     s3[("云对象存储<br/>S3 / OSS")]
 
     cli <==>|"gRPC：请求 + server-streaming JobEvent"| master
